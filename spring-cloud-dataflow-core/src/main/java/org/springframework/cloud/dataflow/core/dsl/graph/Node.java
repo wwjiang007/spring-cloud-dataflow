@@ -21,6 +21,8 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 
 /**
  * Represents a node in a {@link Graph} object that Flo will display as a block.
@@ -28,18 +30,20 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * @author Andy Clement
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(Include.NON_EMPTY)
 public class Node {
 
-	public static final String PROPERTY_LABEL = "label";
-	public static final String METADATAKEY_JOBMODULENAME = "jobModuleName";
+	public static final String METADATA_LABEL = "label";
 
 	public String id;
 
 	public String name;
 
-	public Map<String, String> metadata;
-
+	// Properties are those supported by the node
 	public Map<String, String> properties;
+	
+	// Metadata is other information about the node (e.g. any label in use)
+	public Map<String, String> metadata;
 
 	Node() {
 	}
@@ -62,9 +66,6 @@ public class Node {
 		s.append("Node[id=").append(id).append(",name=").append(name);
 		if (properties != null) {
 			s.append(",properties=").append(properties);
-		}
-		if (metadata != null) {
-			s.append(",metadata=").append(metadata);
 		}
 		s.append("]");
 		return s.toString();
@@ -90,19 +91,21 @@ public class Node {
 		return name.equals("SYNC");
 	}
 
+	@JsonIgnore
 	public void setLabel(String label) {
-		if (properties==null) {
-			properties = new HashMap<>();
+		if (metadata == null) {
+			metadata = new HashMap<>();
 		}
-		properties.put(PROPERTY_LABEL, label);
+		metadata.put(METADATA_LABEL, label);
 	}
 	
+	@JsonIgnore
 	public String getLabel() {
-		if (properties == null) {
+		if (metadata == null) {
 			return null;
 		}
 		else {
-			return properties.get(PROPERTY_LABEL);
+			return metadata.get(METADATA_LABEL);
 		}
 	}
 }

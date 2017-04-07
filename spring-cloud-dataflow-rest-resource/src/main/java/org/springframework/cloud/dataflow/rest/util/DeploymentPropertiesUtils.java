@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2016 the original author or authors.
+ * Copyright 2017 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -46,11 +47,6 @@ public final class DeploymentPropertiesUtils {
 	}
 
 	/**
-	 * Pattern used for parsing a String of comma-delimited key=value pairs.
-	 */
-	private static final Pattern DEPLOYMENT_PROPERTIES_PATTERN = Pattern.compile(",\\s*(app|deployer)\\.[^\\.]+\\.[^=]+=");
-
-	/**
 	 * Pattern used for parsing a String of command-line arguments.
 	 */
 	private static final Pattern DEPLOYMENT_PARAMS_PATTERN = Pattern.compile("(\\s(?=([^\\\"']*[\\\"'][^\\\"']*[\\\"'])*[^\\\"']*$))");
@@ -60,21 +56,62 @@ public final class DeploymentPropertiesUtils {
 	 * {@code app.[appname].[key]} or {@code deployer.[appname].[key]}.
 	 * Values may themselves contain commas, since the split points will be based upon the key pattern.
 	 *
+	 * Logic of parsing key/value pairs from a string is based on few rules and assumptions
+	 * 1. keys will not have commas or equals.
+	 * 2. First raw split is done by commas which will need to be fixed later
+	 *    if value is a comma-delimited list.
+	 *
 	 * @param s the string to parse
 	 * @return the Map of parsed key value pairs
 	 */
 	public static Map<String, String> parse(String s) {
 		Map<String, String> deploymentProperties = new HashMap<String, String>();
-		if (!StringUtils.isEmpty(s)) {
-			Matcher matcher = DEPLOYMENT_PROPERTIES_PATTERN.matcher(s);
-			int start = 0;
-			while (matcher.find()) {
-				addKeyValuePairAsProperty(s.substring(start, matcher.start()), deploymentProperties);
-				start = matcher.start() + 1;
+		ArrayList<String> pairs = new ArrayList<>();
+
+		// get raw candidates as simple comma split
+		String[] candidates = StringUtils.commaDelimitedListToStringArray(s);
+		for (int i = 0; i < candidates.length; i++) {
+			if (i > 0 && !candidates[i].contains("=")) {
+				// we don't have '=' so this has to be latter parts of
+				// a comma delimited value, append it to previously added
+				// key/value pair.
+				// we skip first as we would not have anything to append to. this
+				// would happen if dep prop string is malformed and first given
+				// key/value pair is not actually a key/value.
+				pairs.set(pairs.size()-1, pairs.get(pairs.size()-1) + "," + candidates[i]);
 			}
-			addKeyValuePairAsProperty(s.substring(start), deploymentProperties);
+			else {
+				// we have a key/value pair having '=', or malformed first pair
+				pairs.add(candidates[i]);
+			}
+		}
+
+		// add what we got, addKeyValuePairAsProperty
+		// handles rest as trimming, etc
+		for (String pair : pairs) {
+			addKeyValuePairAsProperty(pair, deploymentProperties);
 		}
 		return deploymentProperties;
+	}
+
+	/**
+	 * Ensure that deployment properties doesn't have keys not starting with
+	 * either {@code app.} or {@code deployer.}. In case non supported key is found
+	 * {@link IllegalArgumentException} is thrown.
+	 *
+	 * @param properties the properties to check
+	 */
+	public static void ensureJustDeploymentProperties(Map<String, String> properties) {
+		if (properties == null) {
+			return;
+		}
+		for (Entry<String, String> property : properties.entrySet()) {
+			String key = property.getKey();
+			if (!key.startsWith("app.") && !key.startsWith("deployer.")) {
+				throw new IllegalArgumentException(
+						"Only deployment property keys starting with 'app.' or 'deployer.' allowed, got '" + key + "'");
+			}
+		}
 	}
 
 	/**

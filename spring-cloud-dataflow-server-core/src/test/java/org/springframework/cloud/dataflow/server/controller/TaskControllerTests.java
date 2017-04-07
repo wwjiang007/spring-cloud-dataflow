@@ -32,12 +32,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.dataflow.core.ApplicationType;
@@ -46,6 +49,7 @@ import org.springframework.cloud.dataflow.registry.AppRegistry;
 import org.springframework.cloud.dataflow.server.configuration.TestDependencies;
 import org.springframework.cloud.dataflow.server.repository.InMemoryTaskDefinitionRepository;
 import org.springframework.cloud.dataflow.server.repository.TaskDefinitionRepository;
+import org.springframework.cloud.dataflow.server.service.TaskService;
 import org.springframework.cloud.deployer.resource.registry.UriRegistry;
 import org.springframework.cloud.deployer.spi.core.AppDeploymentRequest;
 import org.springframework.cloud.deployer.spi.task.TaskLauncher;
@@ -83,6 +87,9 @@ public class TaskControllerTests {
 	@Autowired
 	private AppRegistry appRegistry;
 
+	@Autowired
+	TaskService taskService;
+
 	@Before
 	public void setupMockMVC() {
 		this.mockMvc = MockMvcBuilders.webAppContextSetup(wac).defaultRequest(
@@ -98,12 +105,15 @@ public class TaskControllerTests {
 
 	@Test(expected = IllegalArgumentException.class)
 	public void testTaskDefinitionControllerConstructorMissingRepository() {
-		new TaskDefinitionController(null, null, taskLauncher, appRegistry);
+		new TaskDefinitionController(null, null, taskLauncher, appRegistry,
+				taskService);
 	}
+
 
 	@Test(expected = IllegalArgumentException.class)
 	public void testTaskDefinitionControllerConstructorMissingDeployer() {
-		new TaskDefinitionController(new InMemoryTaskDefinitionRepository(), null, null, appRegistry);
+		new TaskDefinitionController(new InMemoryTaskDefinitionRepository(),
+				null, null, appRegistry, taskService);
 	}
 
 	@Test
@@ -155,7 +165,7 @@ public class TaskControllerTests {
 		repository.save(new TaskDefinition("myTask", "task"));
 		mockMvc.perform(
 				post("/tasks/definitions/").param("name", "myTask").param("definition", "task")
-						.accept(MediaType.APPLICATION_JSON)).andDo(print())
+						.accept(MediaType.APPLICATION_JSON))
 						.andExpect(status().isConflict());
 		assertEquals(1, repository.count());
 	}
@@ -190,6 +200,7 @@ public class TaskControllerTests {
 				.andExpect(status().isOk());
 
 		assertEquals(0, repository.count());
+		Mockito.verify(taskLauncher).destroy("myTask");
 	}
 
 	@Test
@@ -275,7 +286,7 @@ public class TaskControllerTests {
 		verify(this.taskLauncher, atLeast(1)).launch(argumentCaptor.capture());
 
 		AppDeploymentRequest request = argumentCaptor.getValue();
-		assertThat(request.getCommandlineArguments().size(), is(3));
+		assertThat(request.getCommandlineArguments().size(), is(3 + 1)); // +1 for spring.cloud.task.executionid
 		assertThat(request.getCommandlineArguments().get(0), is("--foobar=jee"));
 		assertThat(request.getCommandlineArguments().get(1), is("--foobar2=jee2"));
 		assertThat(request.getCommandlineArguments().get(2), is("--foobar3=jee3 jee3"));
@@ -301,4 +312,11 @@ public class TaskControllerTests {
 				.andExpect(status().isNotFound());
 	}
 
+
+
+	private void createTaskDefinition(String taskName) throws URISyntaxException {
+		String taskAppName = "faketask" + taskName;
+		repository.save(new TaskDefinition(taskName, taskAppName));
+		appRegistry.save(taskAppName, ApplicationType.task, new URI("http://fake.example.com/"),null);
+	}
 }

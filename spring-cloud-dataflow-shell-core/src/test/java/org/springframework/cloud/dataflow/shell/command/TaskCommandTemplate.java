@@ -106,6 +106,7 @@ public class TaskCommandTemplate {
 		verifyExists(taskName, actualDefinition);
 	}
 
+
 	/**
 	 * Destroy all tasks that were created using the 'create' method. Commonly called in a @After annotated method.
 	 */

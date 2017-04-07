@@ -41,6 +41,7 @@ import org.springframework.cloud.dataflow.server.controller.StreamDefinitionCont
 import org.springframework.cloud.dataflow.server.controller.StreamDeploymentController;
 import org.springframework.cloud.dataflow.server.controller.TaskDefinitionController;
 import org.springframework.cloud.dataflow.server.controller.TaskExecutionController;
+import org.springframework.cloud.dataflow.server.controller.ToolsController;
 import org.springframework.cloud.dataflow.server.registry.DataFlowAppRegistryPopulator;
 import org.springframework.cloud.dataflow.server.repository.DeploymentIdRepository;
 import org.springframework.cloud.dataflow.server.repository.InMemoryDeploymentIdRepository;
@@ -50,6 +51,7 @@ import org.springframework.cloud.dataflow.server.repository.StreamDefinitionRepo
 import org.springframework.cloud.dataflow.server.repository.TaskDefinitionRepository;
 import org.springframework.cloud.dataflow.server.service.TaskService;
 import org.springframework.cloud.dataflow.server.service.impl.DefaultTaskService;
+import org.springframework.cloud.dataflow.server.service.impl.TaskConfigurationProperties;
 import org.springframework.cloud.deployer.resource.maven.MavenProperties;
 import org.springframework.cloud.deployer.resource.maven.MavenResourceLoader;
 import org.springframework.cloud.deployer.resource.registry.InMemoryUriRegistry;
@@ -82,7 +84,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupp
 @EnableHypermediaSupport(type = HAL)
 @Import(CompletionConfiguration.class)
 @EnableWebMvc
-@EnableConfigurationProperties(CommonApplicationProperties.class)
+@EnableConfigurationProperties({CommonApplicationProperties.class})
 public class TestDependencies extends WebMvcConfigurationSupport {
 
 	@Bean
@@ -131,8 +133,13 @@ public class TestDependencies extends WebMvcConfigurationSupport {
 	}
 
 	@Bean
+	public ToolsController toolsController() {
+		return new ToolsController();
+	}
+
+	@Bean
 	public AppRegistryController appRegistryController(AppRegistry registry, ApplicationConfigurationMetadataResolver metadataResolver) {
-		return new AppRegistryController(registry, metadataResolver);
+		return new AppRegistryController(registry, metadataResolver, new ForkJoinPool(2));
 	}
 
 	@Bean
@@ -147,12 +154,22 @@ public class TestDependencies extends WebMvcConfigurationSupport {
 
 	@Bean
 	public TaskDefinitionController taskDefinitionController(TaskDefinitionRepository repository,
-			DeploymentIdRepository deploymentIdRepository) {
-		return new TaskDefinitionController(repository, deploymentIdRepository, taskLauncher(), appRegistry());
+			DeploymentIdRepository deploymentIdRepository,
+			ApplicationConfigurationMetadataResolver metadataResolver) {
+		return new TaskDefinitionController(repository, deploymentIdRepository,
+				taskLauncher(), appRegistry(),
+				taskService(metadataResolver, taskRepository(),
+						deploymentIdRepository));
 	}
+
 	@Bean
-	public TaskExecutionController taskExecutionController(TaskExplorer explorer, ApplicationConfigurationMetadataResolver metadataResolver) {
-		return new TaskExecutionController(explorer, taskService(metadataResolver, taskRepository()), taskDefinitionRepository());
+	public TaskExecutionController taskExecutionController(
+			TaskExplorer explorer,
+			ApplicationConfigurationMetadataResolver metadataResolver,
+			DeploymentIdRepository deploymentIdRepository) {
+		return new TaskExecutionController(explorer,
+				taskService(metadataResolver, taskRepository(),
+						deploymentIdRepository), taskDefinitionRepository());
 	}
 
 	@Bean
@@ -193,9 +210,13 @@ public class TestDependencies extends WebMvcConfigurationSupport {
 	@Bean
 	public TaskService taskService(
 		ApplicationConfigurationMetadataResolver metadataResolver,
-		TaskRepository taskExecutionRepository) {
-		return new DefaultTaskService(new DataSourceProperties(), taskDefinitionRepository(), taskExplorer(), taskExecutionRepository,
-				appRegistry(), resourceLoader(), taskLauncher(), metadataResolver);
+		TaskRepository taskExecutionRepository,
+			DeploymentIdRepository deploymentIdRepository) {
+		return new DefaultTaskService(new DataSourceProperties(),
+				taskDefinitionRepository(), taskExplorer(), taskExecutionRepository,
+				appRegistry(), resourceLoader(), taskLauncher(),
+				metadataResolver, new TaskConfigurationProperties(),
+				deploymentIdRepository);
 	}
 
 	@Bean

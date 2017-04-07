@@ -18,7 +18,6 @@ package org.springframework.cloud.dataflow.server.config;
 
 import java.util.HashMap;
 import java.util.Map;
-
 import javax.sql.DataSource;
 
 import org.springframework.analytics.metrics.AggregateCounterRepository;
@@ -43,6 +42,7 @@ import org.springframework.cloud.dataflow.registry.RdbmsUriRegistry;
 import org.springframework.cloud.dataflow.server.config.apps.CommonApplicationProperties;
 import org.springframework.cloud.dataflow.server.config.features.FeaturesProperties;
 import org.springframework.cloud.dataflow.server.config.security.BasicAuthSecurityConfiguration.AuthorizationConfig;
+import org.springframework.cloud.dataflow.server.controller.AboutController;
 import org.springframework.cloud.dataflow.server.controller.AppRegistryController;
 import org.springframework.cloud.dataflow.server.controller.CompletionController;
 import org.springframework.cloud.dataflow.server.controller.FeaturesController;
@@ -58,6 +58,7 @@ import org.springframework.cloud.dataflow.server.controller.StreamDefinitionCont
 import org.springframework.cloud.dataflow.server.controller.StreamDeploymentController;
 import org.springframework.cloud.dataflow.server.controller.TaskDefinitionController;
 import org.springframework.cloud.dataflow.server.controller.TaskExecutionController;
+import org.springframework.cloud.dataflow.server.controller.ToolsController;
 import org.springframework.cloud.dataflow.server.controller.UiController;
 import org.springframework.cloud.dataflow.server.controller.security.LoginController;
 import org.springframework.cloud.dataflow.server.controller.security.SecurityController;
@@ -87,12 +88,13 @@ import org.springframework.scheduling.concurrent.ForkJoinPoolFactoryBean;
  * @author Gunnar Hillert
  * @author Ilayaperumal Gopinathan
  * @author Andy Clement
+ * @author Glenn Renfro
  */
 @SuppressWarnings("all")
 @Configuration
 @Import(CompletionConfiguration.class)
 @ConditionalOnBean({EnableDataFlowServerConfiguration.Marker.class, AppDeployer.class, TaskLauncher.class})
-@EnableConfigurationProperties({AuthorizationConfig.class, FeaturesProperties.class})
+@EnableConfigurationProperties({AuthorizationConfig.class, FeaturesProperties.class, VersionInfoProperties.class})
 @ConditionalOnProperty(prefix = "dataflow.server", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class DataFlowControllerAutoConfiguration {
 
@@ -164,9 +166,12 @@ public class DataFlowControllerAutoConfiguration {
 
 	@Bean
 	@ConditionalOnBean(TaskDefinitionRepository.class)
-	public TaskDefinitionController taskDefinitionController(TaskDefinitionRepository repository,
-			DeploymentIdRepository deploymentIdRepository, TaskLauncher taskLauncher, AppRegistry appRegistry) {
-		return new TaskDefinitionController(repository, deploymentIdRepository, taskLauncher, appRegistry);
+	public TaskDefinitionController taskDefinitionController(
+			TaskDefinitionRepository repository,
+			DeploymentIdRepository deploymentIdRepository,
+			TaskLauncher taskLauncher, AppRegistry appRegistry, TaskService taskService) {
+		return new TaskDefinitionController(repository, deploymentIdRepository,
+				taskLauncher, appRegistry, taskService);
 	}
 
 	@Bean
@@ -224,8 +229,21 @@ public class DataFlowControllerAutoConfiguration {
 	}
 
 	@Bean
+	public ToolsController toolsController() {
+		return new ToolsController();
+	}
+
+	@Bean
+	@ConditionalOnMissingBean(name = "appRegistryFJPFB")
+	public ForkJoinPoolFactoryBean appRegistryFJPFB() {
+		ForkJoinPoolFactoryBean forkJoinPoolFactoryBean = new ForkJoinPoolFactoryBean();
+		forkJoinPoolFactoryBean.setParallelism(4);
+		return forkJoinPoolFactoryBean;
+	}
+
+	@Bean
 	public AppRegistryController appRegistryController(AppRegistry appRegistry, ApplicationConfigurationMetadataResolver metadataResolver) {
-		return new AppRegistryController(appRegistry, metadataResolver);
+		return new AppRegistryController(appRegistry, metadataResolver, appRegistryFJPFB().getObject());
 	}
 
 	@Bean
@@ -242,6 +260,17 @@ public class DataFlowControllerAutoConfiguration {
 	@Bean
 	public FeaturesController featuresController(FeaturesProperties featuresProperties) {
 		return new FeaturesController(featuresProperties);
+	}
+
+	@Bean
+	public AboutController aboutController(
+			AppDeployer appDeployer,
+			TaskLauncher taskLauncher,
+			FeaturesProperties featuresProperties,
+			VersionInfoProperties versionInfoProperties,
+			SecurityProperties securityProperties,
+			AuthorizationConfig authorizationConfig) {
+		return new AboutController(appDeployer, taskLauncher, featuresProperties, versionInfoProperties, securityProperties, authorizationConfig);
 	}
 
 	@Bean
